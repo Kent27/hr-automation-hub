@@ -44,12 +44,12 @@ class EmailService:
         message = EmailMessage()
         message["To"] = payslip.employee_email
         message["From"] = f"{SENDER_NAME} <{self.sender_email}>"
-        message["Subject"] = f"Payslip for {payslip.period}"
+        message["Subject"] = f"Payslip for {payslip.pay_period_label}"
 
         first_name = payslip.employee_name.split(" ")[0]
         body = (
             f"Dear {first_name},\n\n"
-            f"Attached is your payslip for {payslip.period}.\n\n"
+            f"Attached is your payslip for {payslip.pay_period_label}.\n\n"
             "Thanks.\n\n"
             f"Best Regards,\n{SENDER_NAME}"
         )

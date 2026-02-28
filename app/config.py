@@ -25,6 +25,8 @@ PAYSLIP_TEMPLATE = Path(
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
 
+COMPANY_NAME = os.getenv("COMPANY_NAME", "PT. Solutionesia Teknologi Digital")
+
 GMAIL_SENDER_EMAIL = os.getenv("GMAIL_SENDER_EMAIL")
 SENDER_NAME = os.getenv("SENDER_NAME", "Kent")
 GMAIL_CREDENTIALS_PATH = Path(

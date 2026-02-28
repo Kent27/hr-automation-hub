@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional, Tuple
 
+from app.config import COMPANY_NAME
 from app.models.payslip_models import PayslipBenefit, PayslipData
 from app.services.claim_service import ClaimService, claim_service
 from app.services.employee_service import EmployeeService, employee_service
@@ -77,18 +78,31 @@ class PayslipService:
             )
             total_benefits += approved
 
-        net_pay = prorated_salary + total_benefits
+        days_unworked = max(total_working_days - worked_days, 0)
+        prorated_deduction = max(employee.salary - prorated_salary, 0)
+        total_earnings = employee.salary + total_benefits
+        total_deductions = prorated_deduction
+        net_pay = total_earnings - total_deductions
+        pay_period_label = datetime(year, month_index, 1).strftime("%B %Y")
         payslip_data = PayslipData(
             employee_id=employee.id,
             employee_name=employee.full_name,
             employee_email=employee.email,
+            designation=employee.designation,
+            date_of_joining=employee.join_date,
             period=month,
+            pay_period_label=pay_period_label,
+            company_name=COMPANY_NAME,
             base_salary=employee.salary,
             total_working_days=total_working_days,
             worked_days=worked_days,
+            days_unworked=days_unworked,
             prorated_salary=prorated_salary,
+            prorated_deduction=prorated_deduction,
             benefits=benefits_summary,
             total_benefits=total_benefits,
+            total_earnings=total_earnings,
+            total_deductions=total_deductions,
             net_pay=net_pay,
             generated_at=datetime.utcnow(),
         )

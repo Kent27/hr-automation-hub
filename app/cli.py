@@ -43,6 +43,7 @@ def _parse_benefits(values: Optional[List[str]]) -> List[Benefit]:
 def add_employee(
     full_name: str,
     email: str,
+    designation: Optional[str] = typer.Option(None, "--designation"),
     salary: float,
     benefit: Optional[List[str]] = typer.Option(None, "--benefit"),
     join_date: Optional[str] = typer.Option(None, "--join-date"),
@@ -53,6 +54,7 @@ def add_employee(
         EmployeeCreate(
             full_name=full_name,
             email=email,
+            designation=designation,
             salary=salary,
             benefits=benefits,
             join_date=join_date_value,
@@ -72,6 +74,7 @@ def update_employee(
     employee_id: str,
     full_name: Optional[str] = typer.Option(None, "--full-name"),
     email: Optional[str] = typer.Option(None, "--email"),
+    designation: Optional[str] = typer.Option(None, "--designation"),
     salary: Optional[float] = typer.Option(None, "--salary"),
     benefit: Optional[List[str]] = typer.Option(None, "--benefit"),
     join_date: Optional[str] = typer.Option(None, "--join-date"),
@@ -83,6 +86,7 @@ def update_employee(
         EmployeeUpdate(
             full_name=full_name,
             email=email,
+            designation=designation,
             salary=salary,
             benefits=benefits,
             join_date=join_date_value,
