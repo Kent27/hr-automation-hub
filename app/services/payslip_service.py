@@ -35,12 +35,12 @@ class PayslipService:
         self.claim_service = claim_service_instance
         self.email_service = email_service_instance
 
-    def generate_payslip(
+    def _build_payslip_data(
         self,
         employee_id: str,
         month: str,
         worked_days: Optional[int] = None,
-    ) -> Tuple[PayslipData, str]:
+    ) -> PayslipData:
         employee = self.employee_service.get_employee(employee_id)
         if not employee:
             raise ValueError("Employee not found")
@@ -84,7 +84,7 @@ class PayslipService:
         total_deductions = prorated_deduction
         net_pay = total_earnings - total_deductions
         pay_period_label = datetime(year, month_index, 1).strftime("%B %Y")
-        payslip_data = PayslipData(
+        return PayslipData(
             employee_id=employee.id,
             employee_name=employee.full_name,
             employee_email=employee.email,
@@ -107,13 +107,32 @@ class PayslipService:
             generated_at=datetime.utcnow(),
         )
 
+    def generate_payslip(
+        self,
+        employee_id: str,
+        month: str,
+        worked_days: Optional[int] = None,
+    ) -> Tuple[PayslipData, str]:
+        payslip_data = self._build_payslip_data(employee_id, month, worked_days)
         pdf_path = generate_payslip_pdf(payslip_data)
         return payslip_data, str(pdf_path)
 
-    def send_payslip(self, employee_id: str, month: str, worked_days: Optional[int] = None) -> str:
-        payslip_data, pdf_path = self.generate_payslip(employee_id, month, worked_days)
-        self.email_service.send_payslip(payslip_data, pdf_path)
-        return pdf_path
+    def send_payslip(
+        self,
+        employee_id: str,
+        month: str,
+        worked_days: Optional[int] = None,
+        pdf_path: Optional[str] = None,
+    ) -> Tuple[PayslipData, str]:
+        if pdf_path is not None:
+            payslip_data = self._build_payslip_data(employee_id, month, worked_days)
+            path_to_send = pdf_path
+        else:
+            payslip_data, path_to_send = self.generate_payslip(
+                employee_id, month, worked_days
+            )
+        self.email_service.send_payslip(payslip_data, path_to_send)
+        return payslip_data, path_to_send
 
 
 payslip_service = PayslipService()

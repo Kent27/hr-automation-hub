@@ -43,8 +43,8 @@ def _parse_benefits(values: Optional[List[str]]) -> List[Benefit]:
 def add_employee(
     full_name: str,
     email: str,
-    designation: Optional[str] = typer.Option(None, "--designation"),
     salary: float,
+    designation: Optional[str] = typer.Option(None, "--designation"),
     benefit: Optional[List[str]] = typer.Option(None, "--benefit"),
     join_date: Optional[str] = typer.Option(None, "--join-date"),
 ):
@@ -156,9 +156,18 @@ def send_payslip(
     employee_id: str,
     month: str = typer.Option(None, "--month"),
     worked_days: Optional[int] = typer.Option(None, "--worked-days"),
+    pdf: Optional[Path] = typer.Option(
+        None,
+        "--pdf",
+        path_type=Path,
+        help="Path to existing PDF from payslip generate (skips regenerating)",
+    ),
 ):
-    pdf_path = payslip_service.send_payslip(employee_id, month or _default_month(), worked_days)
-    typer.echo(f"Payslip sent: {pdf_path}")
+    pdf_path = str(pdf) if pdf else None
+    payslip_data, path_sent = payslip_service.send_payslip(
+        employee_id, month or _default_month(), worked_days, pdf_path=pdf_path
+    )
+    typer.echo(f"Payslip sent: {path_sent}")
 
 
 @payslip_app.command("send-all")

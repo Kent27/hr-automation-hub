@@ -25,11 +25,15 @@ def generate_payslip(payload: PayslipGenerateRequest) -> PayslipGenerateResponse
 @router.post("/send", response_model=PayslipSendResponse)
 def send_payslip(payload: PayslipGenerateRequest) -> PayslipSendResponse:
     try:
-        payslip, pdf_path = payslip_service.generate_payslip(
-            payload.employee_id, payload.month, payload.worked_days
+        payslip_data, path_sent = payslip_service.send_payslip(
+            payload.employee_id,
+            payload.month,
+            payload.worked_days,
+            pdf_path=payload.pdf_path,
         )
-        payslip_service.email_service.send_payslip(payslip, pdf_path)
-        return PayslipSendResponse(payslip=payslip, pdf_path=pdf_path, sent=True)
+        return PayslipSendResponse(
+            payslip=payslip_data, pdf_path=path_sent, sent=True
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 

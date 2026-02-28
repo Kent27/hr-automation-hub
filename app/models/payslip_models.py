@@ -40,6 +40,9 @@ class PayslipGenerateRequest(BaseModel):
     employee_id: str
     month: str
     worked_days: Optional[int] = Field(None, ge=0)
+    pdf_path: Optional[str] = Field(
+        None, description="For send: path to existing PDF to attach without regenerating"
+    )
 
 
 class PayslipGenerateResponse(BaseModel):
