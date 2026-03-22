@@ -1,81 +1,132 @@
-# Payslip Email Automator CLI
+# HR Automation Hub
 
-## CLI Commands (all available)
+This project is Docker-first (Conda inside container) and exposes both API + CLI.
 
-### Auth
+## 1) Start the app
 
-#### Gmail OAuth setup (required before sending emails)
-```
-python3 -m app.cli auth setup-gmail
-```
-
-### Employee
-
-#### Add employee
-```
-python3 -m app.cli employee add "Full Name" email@example.com 5500000 --designation "Full Stack Developer" --benefit "AI Tools Allowance:336049" --benefit "Courses Allowance:252036" --join-date 2026-01-19
+```bash
+docker compose up --build -d
 ```
 
-#### List employees
-```
-python3 -m app.cli employee list
+Stop when needed:
+
+```bash
+docker compose down
 ```
 
-#### Update employee
-```
-python3 -m app.cli employee update a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb --full-name "Eric Wiyanto" --email wiyantoeric@gmail.com --designation "Full Stack Developer" --salary 5500000 --benefit "AI Tools Allowance:336049" --benefit "Courses Allowance:252036" --join-date 2026-01-19
+## 2) Prepare AI/runtime dependencies
+
+- Pull local Ollama text model:
+
+```bash
+ollama pull qwen3.5:0.8b
 ```
 
-#### Remove employee
-```
-python3 -m app.cli employee remove a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb
+- If Ollama runs on your host while app runs in Docker, set:
+  - `OLLAMA_BASE_URL=http://host.docker.internal:11434`
+
+- Holiday sync uses OpenAI vision fallback by default (uses `OPENAI_MODEL`; recommended `gpt-4o` for holiday accuracy).
+
+## 3) Use the CLI prefix
+
+```bash
+CLI="docker compose run --rm hr-automation-hub python -m app.cli"
 ```
 
-### Claims
+All commands below assume `$CLI`.
 
-#### Add claim
-```
-python3 -m app.cli claim add a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb "AI Tools Allowance - USD 20 (or IDR equivalent)" "cursor invoice.png" --month 2026-02
-```
+## 4) Authentication
 
-#### Add claim with explicit amount
-```
-python3 -m app.cli claim add a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb "Courses Allowance - USD 15 (or IDR equivalent)" "course invoice.png" --month 2026-02 --amount 252036
+Run once for Gmail OAuth:
+
+```bash
+$CLI auth setup-gmail
 ```
 
-#### List claims
-```
-python3 -m app.cli claim list a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb --month 2026-02
+## 5) Employee commands
+
+Add employee (`--benefit` format: `type:limit` or `type:limit:currency`):
+
+```bash
+$CLI employee add "Full Name" email@example.com 5500000 \
+  --designation "Full Stack Developer" \
+  --benefit "AI Tools Allowance:20:USD" \
+  --benefit "Courses Allowance:252036:IDR" \
+  --join-date 2026-01-19
 ```
 
-### Payslips
+List/update/remove:
 
-#### Generate payslip
-```
-python3 -m app.cli payslip generate a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb --month 2026-02
-```
-
-#### Generate payslip with worked days
-```
-python3 -m app.cli payslip generate a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb --month 2026-02 --worked-days 20
+```bash
+$CLI employee list
+$CLI employee update <employee-id> --full-name "Updated Name" --email updated@example.com --designation "Full Stack Developer" --salary 5500000 --benefit "AI Tools Allowance:20:USD" --benefit "Courses Allowance:252036:IDR" --join-date 2026-01-19
+$CLI employee remove <employee-id>
 ```
 
-#### Generate payslips for all employees
-```
-python3 -m app.cli payslip generate-all --month 2026-02
+## 6) Claim commands
+
+Auto-parse invoice (OCR + local Ollama pipeline):
+
+```bash
+$CLI claim add <employee-id> "AI Tools Allowance" "tests/assets/cursor invoice.png" --month 2026-03
 ```
 
-#### Send payslip (generates if no PDF provided)
-```
-python3 -m app.cli payslip send a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb --month 2026-02
+Manual amount override:
+
+```bash
+$CLI claim add <employee-id> "Courses Allowance" "tests/assets/course invoice.png" --month 2026-03 --amount 252036
 ```
 
-#### Send payslip with existing PDF
-```
-python3 -m app.cli payslip send a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb --month 2026-02 --pdf output/payslips/a8462a3c-b84f-4ac6-bc42-b8eb3196a0bb-2026-02.pdf
+List claims:
+
+```bash
+$CLI claim list <employee-id> --month 2026-03
 ```
 
-#### Send payslips for all employees
+## 7) Payslip commands
+
+```bash
+$CLI payslip generate <employee-id> --month 2026-03
+$CLI payslip generate <employee-id> --month 2026-03 --worked-days 20
+$CLI payslip generate-all --month 2026-03
+$CLI payslip send <employee-id> --month 2026-03
+$CLI payslip send <employee-id> --month 2026-03 --pdf output/payslips/<employee-id>-2026-03.pdf
+$CLI payslip send-all --month 2026-03
 ```
-python3 -m app.cli payslip send-all --month 2026-02
+
+## 8) Holiday commands
+
+Sync from a known PDF path:
+
+```bash
+$CLI holiday sync "path/to/official-holiday.pdf"
+```
+
+Auto-discover trusted `.go.id` PDF and sync:
+
+```bash
+$CLI holiday sync-auto --year 2026
+$CLI holiday sync-auto --year 2026 --seed-url "https://www.kemenkopmk.go.id/"
+```
+
+List holidays:
+
+```bash
+$CLI holiday list
+$CLI holiday list 2026
+```
+
+## 9) Automation commands
+
+```bash
+$CLI automation list
+$CLI automation run-due --date 2026-03-31
+$CLI automation run holiday-reminder --date 2026-03-31 --force
+$CLI automation run payslip-send-all --date 2026-03-31 --force
+```
+
+## 10) Run tests
+
+```bash
+docker compose run --rm hr-automation-hub python -m pytest /app/tests -q
 ```
