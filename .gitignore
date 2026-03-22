@@ -10,6 +10,8 @@ output/
 __pycache__/
 *.py[cod]
 
+.venv/
+
 data/employees.json
 data/claims.json
 data/claims/
