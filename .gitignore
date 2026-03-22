@@ -4,6 +4,8 @@
 
 credentials/
 output/
+.venv/
+.venv311/
 
 __pycache__/
 *.py[cod]

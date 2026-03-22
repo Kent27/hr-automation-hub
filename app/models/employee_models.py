@@ -3,12 +3,21 @@ from __future__ import annotations
 from datetime import date
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class Benefit(BaseModel):
     type: str = Field(..., min_length=1)
     limit: float = Field(..., ge=0)
+    currency: str = Field(default="IDR", min_length=3, max_length=3)
+
+    @field_validator("currency")
+    @classmethod
+    def _normalize_currency(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in {"IDR", "USD"}:
+            raise ValueError("Benefit currency must be IDR or USD")
+        return normalized
 
 
 class Employee(BaseModel):

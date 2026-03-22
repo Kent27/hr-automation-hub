@@ -10,7 +10,7 @@ from app.utils.app_logger import setup_app_logger
 
 setup_app_logger()
 
-app = FastAPI(title="Payslip Email Automator")
+app = FastAPI(title="HR Automation Hub")
 
 app.add_middleware(
     CORSMiddleware,
@@ -27,4 +27,4 @@ app.include_router(payslip.router)
 
 @app.get("/")
 def root():
-    return {"message": "Payslip automator API is running"}
+    return {"message": "HR Automation Hub API is running"}

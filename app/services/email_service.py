@@ -36,11 +36,21 @@ class EmailService:
     def setup_oauth(self) -> None:
         self._get_credentials(interactive=True)
 
+    def send_email(self, recipient_email: str, subject: str, body: str) -> None:
+        if not self.sender_email:
+            raise ValueError("GMAIL_SENDER_EMAIL is not set")
+
+        message = EmailMessage()
+        message["To"] = recipient_email
+        message["From"] = f"{SENDER_NAME} <{self.sender_email}>"
+        message["Subject"] = subject
+        message.set_content(body)
+        self._send_message(message)
+
     def send_payslip(self, payslip: PayslipData, pdf_path: str) -> None:
         if not self.sender_email:
             raise ValueError("GMAIL_SENDER_EMAIL is not set")
 
-        service = self._build_service()
         message = EmailMessage()
         message["To"] = payslip.employee_email
         message["From"] = f"{SENDER_NAME} <{self.sender_email}>"
@@ -62,13 +72,16 @@ class EmailService:
             subtype="pdf",
             filename=Path(pdf_path).name,
         )
-
-        encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
-        service.users().messages().send(userId="me", body={"raw": encoded_message}).execute()
+        self._send_message(message)
 
     def _build_service(self):
         credentials = self._get_credentials(interactive=False)
         return build("gmail", "v1", credentials=credentials)
+
+    def _send_message(self, message: EmailMessage) -> None:
+        service = self._build_service()
+        encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode("utf-8")
+        service.users().messages().send(userId="me", body={"raw": encoded_message}).execute()
 
     def _get_credentials(self, interactive: bool) -> Credentials:
         creds = None
@@ -76,8 +89,11 @@ class EmailService:
             creds = Credentials.from_authorized_user_file(str(self.token_path), SCOPES)
 
         if creds and creds.expired and creds.refresh_token:
-            creds.refresh(Request())
-        elif not creds or not creds.valid:
+            try:
+                creds.refresh(Request())
+            except Exception:
+                creds = None
+        if not creds or not creds.valid:
             if not interactive:
                 raise ValueError("Gmail credentials not available. Run auth setup first.")
             if not self.credentials_path.exists():

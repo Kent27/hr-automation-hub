@@ -7,6 +7,10 @@ from app.config import COMPANY_NAME
 from app.models.payslip_models import PayslipBenefit, PayslipData
 from app.services.claim_service import ClaimService, claim_service
 from app.services.employee_service import EmployeeService, employee_service
+from app.services.exchange_rate_service import (
+    ExchangeRateService,
+    exchange_rate_service,
+)
 from app.services.payslip_generator import generate_payslip_pdf
 from app.services.proration_service import (
     calculate_prorated_amount,
@@ -30,10 +34,12 @@ class PayslipService:
         employee_service_instance: EmployeeService = employee_service,
         claim_service_instance: ClaimService = claim_service,
         email_service_instance: EmailService = email_service,
+        exchange_rate_service_instance: ExchangeRateService = exchange_rate_service,
     ):
         self.employee_service = employee_service_instance
         self.claim_service = claim_service_instance
         self.email_service = email_service_instance
+        self.exchange_rate_service = exchange_rate_service_instance
 
     def _build_payslip_data(
         self,
@@ -60,20 +66,26 @@ class PayslipService:
         benefits_summary = []
         total_benefits = 0.0
         for benefit in employee.benefits:
+            claims_for_benefit = [
+                claim for claim in claims if claim.benefit_type == benefit.type
+            ]
             claimed = sum(
-                claim.amount_raw for claim in claims if claim.benefit_type == benefit.type
+                claim.amount_raw for claim in claims_for_benefit
             )
             approved = sum(
-                claim.amount_approved
-                for claim in claims
-                if claim.benefit_type == benefit.type
+                claim.amount_approved for claim in claims_for_benefit
             )
+            if claims_for_benefit:
+                benefit_limit = claims_for_benefit[0].benefit_limit
+            else:
+                benefit_limit = self._benefit_limit_in_idr(benefit.limit, benefit.currency)
+
             benefits_summary.append(
                 PayslipBenefit(
                     type=benefit.type,
                     claimed=claimed,
                     approved=approved,
-                    limit=benefit.limit,
+                    limit=benefit_limit,
                 )
             )
             total_benefits += approved
@@ -106,6 +118,18 @@ class PayslipService:
             net_pay=net_pay,
             generated_at=datetime.utcnow(),
         )
+
+    def _benefit_limit_in_idr(self, limit: float, currency: str) -> float:
+        normalized_currency = (currency or "IDR").upper()
+        if normalized_currency == "IDR":
+            return limit
+        if normalized_currency == "USD":
+            try:
+                quote = self.exchange_rate_service.get_usd_to_idr_quote()
+            except Exception:
+                return limit
+            return round(limit * quote.rate, 2)
+        return limit
 
     def generate_payslip(
         self,

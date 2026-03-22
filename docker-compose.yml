@@ -1,0 +1,18 @@
+services:
+  hr-automation-hub:
+    container_name: hr_automation_hub
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    ports:
+      - "127.0.0.1:${HR_AUTOMATION_HOST_PORT:-8090}:8090"
+    volumes:
+      - .:/app
+      - ./credentials:/app/credentials
+      - ./data:/app/data
+      - ./output:/app/output
+    environment:
+      - PYTHONUNBUFFERED=1
+    restart: unless-stopped

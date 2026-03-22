@@ -1,4 +1,4 @@
-name: payslip-automator
+name: hr-automation-hub
 channels:
   - conda-forge
   - defaults
@@ -12,14 +12,18 @@ dependencies:
       - python-multipart==0.0.22
       - python-dotenv==1.2.1
       - typer==0.12.5
-      - openai==2.15.0
+      - click==8.1.7
       - google-auth==2.48.0
       - google-auth-oauthlib==1.2.4
       - google-auth-httplib2==0.3.0
       - google-api-python-client==2.189.0
       - Jinja2==3.1.5
       - weasyprint==62.3
+      - pydyf==0.10.0
       - pypdf==6.7.1
+      - PyMuPDF==1.27.2.2
+      - paddlepaddle==3.2.2
+      - paddleocr==3.4.0
       - Pillow==12.1.0
       - email-validator==2.3.0
       - pytest==9.0.2

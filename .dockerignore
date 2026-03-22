@@ -1,0 +1,11 @@
+.git
+.gitignore
+.pytest_cache
+__pycache__/
+*.py[cod]
+.venv/
+.venv311/
+output/
+credentials/
+data/claims/
+.DS_Store
