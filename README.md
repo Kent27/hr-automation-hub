@@ -16,16 +16,8 @@ docker compose down
 
 ## 2) Prepare AI/runtime dependencies
 
-- Pull local Ollama text model:
-
-```bash
-ollama pull qwen3.5:0.8b
-```
-
-- If Ollama runs on your host while app runs in Docker, set:
-  - `OLLAMA_BASE_URL=http://host.docker.internal:11434`
-
-- Holiday sync uses OpenAI vision fallback by default (uses `OPENAI_MODEL`; recommended `gpt-4o` for holiday accuracy).
+- Extraction uses OpenAI by default.
+- `OPENAI_MODEL=gpt-4o` is recommended for invoice and holiday extraction quality.
 
 ## 3) Use the CLI prefix
 
@@ -65,7 +57,7 @@ $CLI employee remove <employee-id>
 
 ## 6) Claim commands
 
-Auto-parse invoice (OCR + local Ollama pipeline):
+Auto-parse invoice (OpenAI text/vision pipeline):
 
 ```bash
 $CLI claim add <employee-id> "AI Tools Allowance" "tests/assets/cursor invoice.png" --month 2026-03

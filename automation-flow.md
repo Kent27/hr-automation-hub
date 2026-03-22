@@ -35,7 +35,7 @@ flowchart TD
     G --> H[OpenAI vision extraction (gpt-4o)]
     H --> I{Confident enough?}
     I -->|Yes| J[Write categorized JSON by year]
-    I -->|No| K[Embedded PDF text + Ollama JSON fallback]
+    I -->|No| K[Embedded PDF text + OpenAI text fallback]
     K --> L{Confident enough?}
     L -->|Yes| J
     L -->|No| M[Send failure alert email]

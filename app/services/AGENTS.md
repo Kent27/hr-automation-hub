@@ -12,9 +12,8 @@ This directory contains file-backed business services shared by both FastAPI rou
 - If a service needs dict-shaped JSON (for example holidays by year), implement dedicated read/write handling.
 - Validate month/date inputs using existing strict ISO patterns (`YYYY-MM`, `YYYY-MM-DD`).
 - Keep side effects explicit:
-  - Local OCR calls for invoice extraction (PaddleOCR / PyMuPDF)
-  - Local Ollama HTTP calls (`OLLAMA_BASE_URL`)
-  - OpenAI HTTP calls for holiday vision fallback (`OPENAI_MODEL`)
+  - OpenAI HTTP calls for invoice + holiday extraction (`OPENAI_MODEL`)
+  - Local Ollama HTTP calls (`OLLAMA_BASE_URL`) for non-extraction/test flows
   - Gmail send operations
   - PDF generation/writes to `output/`
 
@@ -22,11 +21,11 @@ This directory contains file-backed business services shared by both FastAPI rou
 
 - `ClaimService.add_claim()` parses invoice unless `amount_override` is provided.
 - `InvoiceParser` and `HolidaySyncService` send alert email on final extraction failure unless `EXTRACTION_ALERT_EMAIL` is empty.
-- `OCRService` lazy-imports `paddleocr` and `fitz`; missing deps raise `ValueError` at runtime.
 - `OllamaService` expects JSON response shape from `/api/chat`; malformed output raises `ValueError`.
 - `OpenAIJsonService` expects `chat.completions` JSON response; malformed content raises `ValueError`.
 - `EmailService._get_credentials(interactive=False)` raises if OAuth files are missing/invalid.
-- `HolidaySyncService` flow is now `OpenAI vision -> Ollama text fallback on embedded PDF text` (no OCR stage for holiday sync runtime).
+- `InvoiceParser` flow is now `OpenAI text on embedded PDF text -> OpenAI vision`.
+- `HolidaySyncService` flow is now `OpenAI vision -> OpenAI text fallback on embedded PDF text`.
 - `load_holiday_entries()` expects `{"year": {"libur_nasional": [...], "cuti_bersama": [...]}}` records.
 - Tests should inject fake dependencies and temp paths; default singletons can mutate real `data/` files.
 
@@ -37,9 +36,8 @@ This directory contains file-backed business services shared by both FastAPI rou
 | `storage_utils.py` | Canonical JSON list persistence behavior used by most services. |
 | `claim_service.py` | Benefit capping + invoice parsing flow; common source of extraction side effects. |
 | `email_service.py` | Gmail OAuth + send abstractions used by payslip and reminder flows. |
-| `invoice_parser.py` | Hybrid invoice extraction (`rules -> OCR -> Ollama`) with failure alerting. |
+| `invoice_parser.py` | OpenAI-backed invoice extraction with text/vision fallback and failure alerting. |
 | `holiday_pdf_discovery_service.py` | Trusted `.go.id` holiday PDF discovery, scoring, and download. |
 | `openai_json_service.py` | JSON-only OpenAI wrapper for text + image chat payloads. |
-| `holiday_sync_service.py` | OpenAI vision-first holiday extraction + Ollama text fallback + year-keyed persistence. |
-| `ocr_service.py` | OCR text extraction for images and rendered PDF pages. |
+| `holiday_sync_service.py` | OpenAI vision-first holiday extraction + OpenAI text fallback + year-keyed persistence. |
 | `ollama_service.py` | JSON-only local model call wrapper used by extraction fallbacks. |
