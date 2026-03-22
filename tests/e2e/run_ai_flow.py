@@ -40,7 +40,6 @@ def _configure_runtime_env(paths: Dict[str, Path], ollama_base_url: str) -> None
     os.environ["OUTPUT_DIR"] = str(paths["output_dir"])
     os.environ["EXTRACTION_ALERT_EMAIL"] = ""
     os.environ["OLLAMA_BASE_URL"] = ollama_base_url
-    os.environ.setdefault("PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK", "True")
 
 
 def _default_run_name() -> str:
@@ -109,12 +108,9 @@ def run_ai_flow(
     from app.services.claim_service import claim_service
     from app.services.employee_service import employee_service
     from app.services.holiday_sync_service import holiday_sync_service
-    from app.services.ocr_service import OCRService
     from app.services.ollama_service import ollama_service
     from app.services.payslip_service import payslip_service
 
-    ocr_service = OCRService()
-    ocr_text = ocr_service.extract_text_from_image(repo_root / "tests" / "assets" / "cursor invoice.png")
     ollama_ping = ollama_service.chat_json(
         prompt='Return JSON only with keys ok=true and run="ai-flow".',
         system_prompt="Strict JSON only.",
@@ -142,7 +138,7 @@ def run_ai_flow(
     text_synced = holiday_sync_service.sync_from_pdf(holiday_inputs["text_pdf"])
 
     scanned_synced = set()
-    if holiday_sync_service.openai_fallback_enabled:
+    if holiday_sync_service.openai_vision_enabled:
         scanned_synced = holiday_sync_service.sync_from_pdf(holiday_inputs["scanned_pdf"])
 
     claims_json = json.loads((paths["data_dir"] / "claims.json").read_text(encoding="utf-8"))
@@ -156,8 +152,6 @@ def run_ai_flow(
         "employee_id": employee.id,
         "month": month,
         "ai_smoke": {
-            "ocr_chars": len(ocr_text),
-            "ocr_preview": ocr_text[:180],
             "ollama_response": ollama_ping,
         },
         "claims": [

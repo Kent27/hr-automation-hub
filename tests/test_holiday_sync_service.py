@@ -10,20 +10,16 @@ from app.services.holiday_sync_service import (
 )
 
 
-class FakeOllamaService:
-    def __init__(self, payload):
-        self.payload = payload
-        self.calls = 0
+class FakeOpenAIService:
+    def __init__(self, text_payload=None, vision_payload=None):
+        self.text_payload = text_payload or {"holidays": []}
+        self.vision_payload = vision_payload or {"holidays": []}
+        self.text_calls = 0
+        self.vision_calls = 0
 
     def chat_json(self, prompt: str, system_prompt: str, model: str):
-        self.calls += 1
-        return self.payload
-
-
-class FakeOpenAIService:
-    def __init__(self, payload):
-        self.payload = payload
-        self.calls = 0
+        self.text_calls += 1
+        return self.text_payload
 
     def chat_json_with_images(
         self,
@@ -33,8 +29,8 @@ class FakeOpenAIService:
         model: str,
         image_detail: str = "high",
     ):
-        self.calls += 1
-        return self.payload
+        self.vision_calls += 1
+        return self.vision_payload
 
 
 class FakeEmailService:
@@ -91,20 +87,19 @@ def test_extract_holidays_from_text_handles_indonesian_date_ranges():
     ]
 
 
-def test_extract_holidays_from_pdf_uses_text_llm_fallback_when_needed(tmp_path: Path):
+def test_extract_holidays_from_pdf_uses_openai_text_fallback_when_needed(tmp_path: Path):
     pdf_file = tmp_path / "holidays.pdf"
     pdf_file.write_text("dummy", encoding="utf-8")
 
-    ollama_service = FakeOllamaService(
-        {
-            "holidays": [
-                {"date": "2026-08-17", "name": "Hari Kemerdekaan Republik Indonesia"},
-                {"date": "2026-12-25", "name": "Hari Raya Natal"},
-            ]
-        }
-    )
+    text_payload = {
+        "holidays": [
+            {"date": "2026-08-17", "name": "Hari Kemerdekaan Republik Indonesia"},
+            {"date": "2026-12-25", "name": "Hari Raya Natal"},
+        ]
+    }
+    openai_service = FakeOpenAIService(text_payload=text_payload)
     service = EmbeddedTextHolidaySyncService(
-        ollama_service_instance=ollama_service,
+        openai_service_instance=openai_service,
         email_service_instance=FakeEmailService(),
         openai_fallback_enabled=False,
     )
@@ -123,33 +118,30 @@ def test_extract_holidays_from_pdf_uses_text_llm_fallback_when_needed(tmp_path: 
             "category": HOLIDAY_CATEGORY_LIBUR_NASIONAL,
         },
     ]
-    assert ollama_service.calls == 1
+    assert openai_service.text_calls == 1
+    assert openai_service.vision_calls == 0
 
 
 def test_extract_holidays_from_pdf_prefers_openai_vision_when_confident(tmp_path: Path):
     pdf_file = tmp_path / "holidays.pdf"
     pdf_file.write_text("dummy", encoding="utf-8")
 
-    ollama_service = FakeOllamaService(
-        {
-            "holidays": [
-                {"date": "2026-08-17", "name": "Hari Kemerdekaan Republik Indonesia"},
-                {"date": "2026-12-25", "name": "Hari Raya Natal"},
-            ]
-        }
-    )
-    openai_service = FakeOpenAIService(
-        {
-            "holidays": [
-                {"date": "2026-01-01", "name": "Tahun Baru Masehi"},
-                {"date": "2026-02-17", "name": "Tahun Baru Imlek 2577 Kongzili"},
-                {"date": "2026-03-21", "name": "Idul Fitri 1447 Hijriah"},
-            ]
-        }
-    )
+    vision_payload = {
+        "holidays": [
+            {"date": "2026-01-01", "name": "Tahun Baru Masehi"},
+            {"date": "2026-02-17", "name": "Tahun Baru Imlek 2577 Kongzili"},
+            {"date": "2026-03-21", "name": "Idul Fitri 1447 Hijriah"},
+        ]
+    }
+    text_payload = {
+        "holidays": [
+            {"date": "2026-08-17", "name": "Hari Kemerdekaan Republik Indonesia"},
+            {"date": "2026-12-25", "name": "Hari Raya Natal"},
+        ]
+    }
+    openai_service = FakeOpenAIService(text_payload=text_payload, vision_payload=vision_payload)
 
     service = VisionReadyHolidaySyncService(
-        ollama_service_instance=ollama_service,
         openai_service_instance=openai_service,
         openai_fallback_enabled=True,
         email_service_instance=FakeEmailService(),
@@ -174,8 +166,8 @@ def test_extract_holidays_from_pdf_prefers_openai_vision_when_confident(tmp_path
             "category": HOLIDAY_CATEGORY_LIBUR_NASIONAL,
         },
     ]
-    assert openai_service.calls == 1
-    assert ollama_service.calls == 0
+    assert openai_service.vision_calls == 1
+    assert openai_service.text_calls == 0
 
 
 def test_extract_holidays_from_pdf_sends_alert_on_final_failure(tmp_path: Path):
@@ -184,7 +176,7 @@ def test_extract_holidays_from_pdf_sends_alert_on_final_failure(tmp_path: Path):
 
     email_service = FakeEmailService()
     service = EmptyTextHolidaySyncService(
-        ollama_service_instance=FakeOllamaService({"holidays": []}),
+        openai_service_instance=FakeOpenAIService(),
         email_service_instance=email_service,
         openai_fallback_enabled=False,
         alert_recipient="kentkent2797@gmail.com",

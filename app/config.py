@@ -36,6 +36,8 @@ PAYSLIP_TEMPLATE = Path(
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_INVOICE_MAX_PAGES = int(os.getenv("OPENAI_INVOICE_MAX_PAGES", "3"))
+OPENAI_INVOICE_IMAGE_DPI = int(os.getenv("OPENAI_INVOICE_IMAGE_DPI", "170"))
 OPENAI_HOLIDAY_FALLBACK_ENABLED = _parse_bool(
     os.getenv("OPENAI_HOLIDAY_FALLBACK_ENABLED", "true"),
     default=True,
@@ -43,13 +45,9 @@ OPENAI_HOLIDAY_FALLBACK_ENABLED = _parse_bool(
 OPENAI_HOLIDAY_MAX_PAGES = int(os.getenv("OPENAI_HOLIDAY_MAX_PAGES", "6"))
 OPENAI_HOLIDAY_IMAGE_DPI = int(os.getenv("OPENAI_HOLIDAY_IMAGE_DPI", "170"))
 
-AI_BACKEND = os.getenv("AI_BACKEND", "hybrid_local")
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_TEXT_MODEL = os.getenv("OLLAMA_TEXT_MODEL", "qwen3.5:0.8b")
 HYBRID_CONFIDENCE_THRESHOLD = float(os.getenv("HYBRID_CONFIDENCE_THRESHOLD", "0.85"))
-OCR_DPI = int(os.getenv("OCR_DPI", "200"))
-MAX_OCR_PAGES_INVOICE = int(os.getenv("MAX_OCR_PAGES_INVOICE", "3"))
-OCR_LANG = os.getenv("OCR_LANG", "eng+ind")
 EXTRACTION_ALERT_EMAIL = os.getenv("EXTRACTION_ALERT_EMAIL", "kentkent2797@gmail.com")
 FX_USD_IDR_API_URL = os.getenv("FX_USD_IDR_API_URL", "https://open.er-api.com/v6/latest/USD")
 FX_REQUEST_TIMEOUT_SECONDS = int(os.getenv("FX_REQUEST_TIMEOUT_SECONDS", "20"))

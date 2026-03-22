@@ -1,30 +1,31 @@
 from __future__ import annotations
 
+import base64
 import logging
 import mimetypes
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Optional, Protocol, Tuple
+from typing import Any, Dict, List, Optional, Protocol
 
 from pypdf import PdfReader
 
 from app.config import (
     EXTRACTION_ALERT_EMAIL,
     HYBRID_CONFIDENCE_THRESHOLD,
-    MAX_OCR_PAGES_INVOICE,
-    OLLAMA_TEXT_MODEL,
+    OPENAI_INVOICE_IMAGE_DPI,
+    OPENAI_INVOICE_MAX_PAGES,
+    OPENAI_MODEL,
 )
 from app.models.claim_models import InvoiceExtractionResult
 from app.services.hybrid_confidence import score_invoice_extraction
-from app.services.ocr_service import OCRService, ocr_service
-from app.services.ollama_service import OllamaService, ollama_service
+from app.services.openai_json_service import OpenAIJsonService, openai_json_service
 
 logger = logging.getLogger(__name__)
 
 
-INVOICE_EXTRACTION_PROMPT = """
-You extract structured invoice fields from OCR text.
+INVOICE_EXTRACTION_TEXT_PROMPT = """
+You extract structured invoice fields from invoice text.
 Return JSON only.
 
 Schema:
@@ -41,23 +42,24 @@ Rules:
 - confidence must be 0.0-1.0.
 """
 
+INVOICE_EXTRACTION_VISION_PROMPT = """
+You extract structured invoice fields from invoice image(s).
+Return JSON only.
 
-TOTAL_LINE_PATTERN = re.compile(
-    r"(?im)(?:grand\s*total|total\s*(?:amount|payment|pembayaran|tagihan)?|"
-    r"amount\s*due|jumlah\s*(?:tagihan|bayar))[^\dA-Za-z]{0,8}"
-    r"(?P<currency>rp|idr|usd|\$)?\s*(?P<amount>[0-9][0-9\.,\s]{1,})"
-)
-CURRENCY_AMOUNT_PATTERN = re.compile(
-    r"(?im)(?P<currency>rp|idr|usd|\$)\s*(?P<amount>[0-9][0-9\.,\s]{1,})"
-)
-GENERIC_AMOUNT_PATTERN = re.compile(r"\b[0-9]{1,3}(?:[.,][0-9]{3})+(?:[.,][0-9]{2})?\b")
-INVOICE_ID_PATTERNS = [
-    re.compile(
-        r"(?im)(?:invoice|inv|receipt|transaction|trx)\s*"
-        r"(?:no|number|id|#|:|-)?\s*([A-Za-z0-9][A-Za-z0-9\-_/]{3,})"
-    ),
-    re.compile(r"(?im)\b([A-Za-z]{2,}[A-Za-z0-9\-_/]{3,})\b"),
-]
+Schema:
+{
+  "invoice_id": "string or null",
+  "total_amount": 0,
+  "currency": "IDR or USD or null",
+  "confidence": 0.0
+}
+
+Rules:
+- Read totals and currency from the visible invoice.
+- Do not invent values.
+- total_amount must be numeric.
+- confidence must be 0.0-1.0.
+"""
 
 
 class InvoiceAlertEmailService(Protocol):
@@ -128,78 +130,15 @@ def _parse_amount(raw: Any) -> Optional[float]:
         return None
 
 
-def _looks_like_invoice_id(value: str) -> bool:
-    if len(value) < 5:
-        return False
-    return any(ch.isalpha() for ch in value) and any(ch.isdigit() for ch in value)
-
-
-def _extract_invoice_id(text: str) -> Optional[str]:
-    for pattern in INVOICE_ID_PATTERNS:
-        for match in pattern.finditer(text):
-            candidate = _normalize_invoice_id(match.group(1))
-            if _looks_like_invoice_id(candidate):
-                return candidate
-    return None
-
-
-def _extract_total_amount(text: str) -> Tuple[float, Optional[str]]:
-    best_amount = 0.0
-    best_currency: Optional[str] = None
-
-    for match in TOTAL_LINE_PATTERN.finditer(text):
-        amount = _parse_amount(match.group("amount"))
-        if amount is None:
-            continue
-        if amount >= best_amount:
-            best_amount = amount
-            best_currency = _normalize_currency(match.group("currency"))
-
-    if best_amount > 0:
-        return best_amount, best_currency
-
-    for match in CURRENCY_AMOUNT_PATTERN.finditer(text):
-        amount = _parse_amount(match.group("amount"))
-        if amount is None:
-            continue
-        if amount >= best_amount:
-            best_amount = amount
-            best_currency = _normalize_currency(match.group("currency"))
-
-    if best_amount > 0:
-        return best_amount, best_currency
-
-    for match in GENERIC_AMOUNT_PATTERN.finditer(text):
-        amount = _parse_amount(match.group(0))
-        if amount is None:
-            continue
-        if amount >= best_amount:
-            best_amount = amount
-
-    return best_amount, best_currency
-
-
-def _extract_invoice_fields_from_text(text: str) -> Dict[str, Any]:
-    invoice_id = _extract_invoice_id(text)
-    total_amount, currency = _extract_total_amount(text)
-    confidence = score_invoice_extraction(total_amount, invoice_id, currency)
-    return {
-        "invoice_id": invoice_id,
-        "total_amount": total_amount,
-        "currency": currency,
-        "confidence": confidence,
-    }
-
-
 class InvoiceParser:
     def __init__(
         self,
-        ocr_service_instance: OCRService = ocr_service,
-        ollama_service_instance: OllamaService = ollama_service,
+        openai_service_instance: Optional[OpenAIJsonService] = None,
         email_service_instance: Optional[InvoiceAlertEmailService] = None,
-        text_model: str = OLLAMA_TEXT_MODEL,
+        openai_model: str = OPENAI_MODEL,
+        openai_max_pages: int = OPENAI_INVOICE_MAX_PAGES,
+        openai_image_dpi: int = OPENAI_INVOICE_IMAGE_DPI,
         confidence_threshold: float = HYBRID_CONFIDENCE_THRESHOLD,
-        max_ocr_pages: int = MAX_OCR_PAGES_INVOICE,
         alert_recipient: str = EXTRACTION_ALERT_EMAIL,
     ):
         if email_service_instance is None:
@@ -207,12 +146,15 @@ class InvoiceParser:
 
             email_service_instance = email_service
 
-        self.ocr_service = ocr_service_instance
-        self.ollama_service = ollama_service_instance
+        if openai_service_instance is None:
+            openai_service_instance = openai_json_service
+
+        self.openai_service = openai_service_instance
         self.email_service = email_service_instance
-        self.text_model = text_model
+        self.openai_model = openai_model
+        self.openai_max_pages = max(1, openai_max_pages)
+        self.openai_image_dpi = max(96, openai_image_dpi)
         self.confidence_threshold = confidence_threshold
-        self.max_ocr_pages = max_ocr_pages
         self.alert_recipient = alert_recipient
 
     def parse_invoice(self, file_path: Path) -> InvoiceExtractionResult:
@@ -224,86 +166,127 @@ class InvoiceParser:
         return self._parse_image(file_path)
 
     def _parse_pdf(self, file_path: Path) -> InvoiceExtractionResult:
+        openai_errors: List[str] = []
         embedded_text = self._extract_pdf_text(file_path)
         if embedded_text:
-            rule_result = self._result_from_text(embedded_text)
-            if self._is_confident(rule_result):
-                return rule_result
+            try:
+                openai_text_result = self._parse_with_openai_text(embedded_text)
+                if self._is_confident(openai_text_result):
+                    return openai_text_result
+            except Exception as exc:
+                openai_errors.append(str(exc))
 
-        ocr_text = self.ocr_service.extract_text_from_pdf(
-            file_path,
-            max_pages=self.max_ocr_pages,
-        )
-        combined_text = "\n".join(
-            part for part in [embedded_text, ocr_text] if part and part.strip()
-        ).strip()
+        try:
+            openai_vision_result = self._parse_with_openai_vision_pdf(file_path)
+            if self._is_confident(openai_vision_result):
+                return openai_vision_result
+        except Exception as exc:
+            openai_errors.append(str(exc))
 
-        if combined_text:
-            ocr_rule_result = self._result_from_text(combined_text)
-            if self._is_confident(ocr_rule_result):
-                return ocr_rule_result
-
-            llm_result = self._parse_with_text_llm(combined_text)
-            if self._is_confident(llm_result):
-                return llm_result
-
-        detail = "Could not extract required invoice fields with local pipeline"
+        detail = "Could not extract required invoice fields with OpenAI pipeline"
+        if openai_errors:
+            detail = f"{detail}. Last error: {openai_errors[-1]}"
         self._send_failure_alert(file_path=file_path, detail=detail)
         raise ValueError(detail)
 
     def _parse_image(self, file_path: Path) -> InvoiceExtractionResult:
-        ocr_text = self.ocr_service.extract_text_from_image(file_path)
-        if ocr_text:
-            rule_result = self._result_from_text(ocr_text)
-            if self._is_confident(rule_result):
-                return rule_result
+        try:
+            openai_vision_result = self._parse_with_openai_vision_image(file_path)
+        except Exception as exc:
+            detail = f"Could not extract required invoice fields from image. Last error: {exc}"
+            self._send_failure_alert(file_path=file_path, detail=detail)
+            raise ValueError(detail) from exc
 
-            llm_result = self._parse_with_text_llm(ocr_text)
-            if self._is_confident(llm_result):
-                return llm_result
+        if self._is_confident(openai_vision_result):
+            return openai_vision_result
 
-        detail = "Could not extract required invoice fields from image"
+        detail = "Could not extract required invoice fields from image with OpenAI vision"
         self._send_failure_alert(file_path=file_path, detail=detail)
         raise ValueError(detail)
 
-    @staticmethod
-    def _extract_pdf_text(file_path: Path) -> str:
+    def _extract_pdf_text(self, file_path: Path) -> str:
         reader = PdfReader(str(file_path))
         text_parts = []
-        for page in reader.pages[:3]:
+        for page in reader.pages[: self.openai_max_pages]:
             page_text = page.extract_text() or ""
             if page_text.strip():
                 text_parts.append(page_text)
         return "\n".join(text_parts).strip()
 
-    @staticmethod
-    def _result_from_text(text: str) -> InvoiceExtractionResult:
-        extracted = _extract_invoice_fields_from_text(text)
-        return InvoiceExtractionResult(
-            invoice_id=extracted["invoice_id"],
-            total_amount=extracted["total_amount"],
-            currency=extracted["currency"],
-            confidence=extracted["confidence"],
-            raw={"source": "rules", "text_preview": text[:1200]},
-        )
-
-    def _parse_with_text_llm(self, text_content: str) -> InvoiceExtractionResult:
+    def _parse_with_openai_text(self, text_content: str) -> InvoiceExtractionResult:
         prompt = (
-            f"{INVOICE_EXTRACTION_PROMPT}\n\n"
-            f"Invoice OCR text:\n{text_content[:16000]}"
+            f"{INVOICE_EXTRACTION_TEXT_PROMPT}\n\n"
+            f"Invoice text:\n{text_content[:20000]}"
         )
-        raw_json = self.ollama_service.chat_json(
+        raw_json = self.openai_service.chat_json(
             prompt=prompt,
             system_prompt="You return strict JSON only.",
-            model=self.text_model,
+            model=self.openai_model,
         )
+        return self._result_from_llm_payload(raw_json, source="openai_text")
 
-        invoice_id = _normalize_invoice_id(str(raw_json.get("invoice_id") or ""))
-        total_amount = _parse_amount(raw_json.get("total_amount")) or 0.0
-        currency = _normalize_currency(
-            str(raw_json.get("currency") or "") if raw_json.get("currency") else None
+    def _parse_with_openai_vision_pdf(self, file_path: Path) -> InvoiceExtractionResult:
+        image_data_urls = self._render_pdf_images(file_path)
+        if not image_data_urls:
+            raise ValueError("No PDF pages were rendered for vision extraction")
+        raw_json = self.openai_service.chat_json_with_images(
+            prompt=INVOICE_EXTRACTION_VISION_PROMPT,
+            image_data_urls=image_data_urls,
+            system_prompt="You return strict JSON only.",
+            model=self.openai_model,
         )
-        confidence = raw_json.get("confidence")
+        return self._result_from_llm_payload(raw_json, source="openai_vision_pdf")
+
+    def _parse_with_openai_vision_image(self, file_path: Path) -> InvoiceExtractionResult:
+        mime_type, _ = mimetypes.guess_type(str(file_path))
+        mime_type = mime_type or "image/png"
+        image_data_url = (
+            f"data:{mime_type};base64,"
+            + base64.b64encode(file_path.read_bytes()).decode("ascii")
+        )
+        raw_json = self.openai_service.chat_json_with_images(
+            prompt=INVOICE_EXTRACTION_VISION_PROMPT,
+            image_data_urls=[image_data_url],
+            system_prompt="You return strict JSON only.",
+            model=self.openai_model,
+        )
+        return self._result_from_llm_payload(raw_json, source="openai_vision_image")
+
+    def _render_pdf_images(self, file_path: Path) -> List[str]:
+        try:
+            import fitz
+        except ImportError as exc:
+            raise ValueError("PyMuPDF is not installed. Install pymupdf first.") from exc
+
+        image_data_urls: List[str] = []
+        with fitz.open(str(file_path)) as document:
+            pages_to_read = min(self.openai_max_pages, document.page_count)
+            zoom = self.openai_image_dpi / 72.0
+            matrix = fitz.Matrix(zoom, zoom)
+
+            for page_index in range(pages_to_read):
+                page = document.load_page(page_index)
+                pixmap = page.get_pixmap(matrix=matrix, alpha=False)
+                png_bytes = pixmap.tobytes("png")
+                image_data_urls.append(
+                    "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
+                )
+
+        return image_data_urls
+
+    def _result_from_llm_payload(
+        self,
+        raw_json: Dict[str, Any],
+        source: str,
+    ) -> InvoiceExtractionResult:
+        payload = dict(raw_json or {})
+
+        invoice_id = _normalize_invoice_id(str(payload.get("invoice_id") or ""))
+        total_amount = _parse_amount(payload.get("total_amount")) or 0.0
+        currency = _normalize_currency(
+            str(payload.get("currency") or "") if payload.get("currency") else None
+        )
+        confidence = payload.get("confidence")
         try:
             confidence_f = float(confidence) if confidence is not None else None
         except (ValueError, TypeError):
@@ -317,7 +300,7 @@ class InvoiceParser:
             total_amount=total_amount,
             currency=currency,
             confidence=confidence_f,
-            raw=raw_json,
+            raw={"source": source, **payload},
         )
 
     def _is_confident(self, result: InvoiceExtractionResult) -> bool:
@@ -336,7 +319,7 @@ class InvoiceParser:
 
         subject = f"[HR Automation] Invoice extraction failed: {file_path.name}"
         body = (
-            f"Invoice extraction failed after all local fallbacks.\n\n"
+            f"Invoice extraction failed after OpenAI extraction fallback(s).\n\n"
             f"File: {file_path}\n"
             f"Detail: {detail}\n"
             f"Time (UTC): {datetime.now(timezone.utc).isoformat()}\n"

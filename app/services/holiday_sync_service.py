@@ -20,11 +20,9 @@ from app.config import (
     OPENAI_HOLIDAY_IMAGE_DPI,
     OPENAI_HOLIDAY_MAX_PAGES,
     OPENAI_MODEL,
-    OLLAMA_TEXT_MODEL,
 )
 from app.services.hybrid_confidence import score_holiday_entries
 from app.services.openai_json_service import OpenAIJsonService, openai_json_service
-from app.services.ollama_service import OllamaService, ollama_service
 
 logger = logging.getLogger(__name__)
 
@@ -261,10 +259,8 @@ class HolidaySyncService:
     def __init__(
         self,
         holidays_file: Path = HOLIDAYS_FILE,
-        ollama_service_instance: OllamaService = ollama_service,
         openai_service_instance: Optional[OpenAIJsonService] = None,
         email_service_instance: Optional[HolidaySyncAlertEmailService] = None,
-        text_model: str = OLLAMA_TEXT_MODEL,
         openai_model: str = OPENAI_MODEL,
         openai_fallback_enabled: bool = OPENAI_HOLIDAY_FALLBACK_ENABLED,
         openai_max_pages: int = OPENAI_HOLIDAY_MAX_PAGES,
@@ -279,14 +275,12 @@ class HolidaySyncService:
             email_service_instance = email_service
 
         self.holidays_file = holidays_file
-        self.ollama_service = ollama_service_instance
-        if openai_service_instance is None and openai_fallback_enabled and OPENAI_API_KEY:
+        if openai_service_instance is None and OPENAI_API_KEY:
             openai_service_instance = openai_json_service
         self.openai_service = openai_service_instance
         self.email_service = email_service_instance
-        self.text_model = text_model
         self.openai_model = openai_model
-        self.openai_fallback_enabled = bool(
+        self.openai_vision_enabled = bool(
             openai_fallback_enabled and self.openai_service is not None
         )
         self.openai_max_pages = max(1, openai_max_pages)
@@ -305,16 +299,16 @@ class HolidaySyncService:
         combined_text = (embedded_text or "").strip()
 
         if combined_text:
-            llm_entries = self._extract_with_text_llm(combined_text)
+            llm_entries = self._extract_with_openai_text_llm(combined_text)
             if self._is_confident_enough(llm_entries):
                 return llm_entries
 
             if openai_entries and self._entry_score(openai_entries) > self._entry_score(llm_entries):
                 return openai_entries
 
-        detail = "Could not extract holidays with local Ollama pipeline"
-        if self.openai_fallback_enabled:
-            detail = "Could not extract holidays with OpenAI vision + local Ollama text pipeline"
+        detail = "Could not extract holidays with OpenAI (configure OPENAI_API_KEY)"
+        if self.openai_service is not None:
+            detail = "Could not extract holidays with OpenAI vision + OpenAI text pipeline"
         self._send_failure_alert(pdf_path, detail)
         raise ValueError(detail)
 
@@ -385,17 +379,25 @@ class HolidaySyncService:
                 text_parts.append(page_text)
         return "\n".join(text_parts).strip()
 
-    def _extract_with_text_llm(self, text: str) -> List[Dict[str, str]]:
+    def _extract_with_openai_text_llm(self, text: str) -> List[Dict[str, str]]:
+        if self.openai_service is None:
+            return []
+
         prompt = f"{HOLIDAY_EXTRACTION_PROMPT}\n\nDocument text:\n{text[:20000]}"
-        payload = self.ollama_service.chat_json(
-            prompt=prompt,
-            system_prompt="You return strict JSON only.",
-            model=self.text_model,
-        )
+        try:
+            payload = self.openai_service.chat_json(
+                prompt=prompt,
+                system_prompt="You return strict JSON only.",
+                model=self.openai_model,
+            )
+        except Exception as exc:
+            logger.warning("OpenAI text holiday extraction failed: %s", exc)
+            return []
+
         return self._parse_holidays_payload(payload)
 
     def _extract_with_openai_vision_llm(self, pdf_path: Path) -> List[Dict[str, str]]:
-        if not self.openai_fallback_enabled or self.openai_service is None:
+        if not self.openai_vision_enabled or self.openai_service is None:
             return []
 
         try:

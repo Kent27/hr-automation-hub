@@ -22,8 +22,6 @@ dependencies:
       - pydyf==0.10.0
       - pypdf==6.7.1
       - PyMuPDF==1.27.2.2
-      - paddlepaddle==3.2.2
-      - paddleocr==3.4.0
       - Pillow==12.1.0
       - email-validator==2.3.0
       - pytest==9.0.2
