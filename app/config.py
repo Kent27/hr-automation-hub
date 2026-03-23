@@ -55,7 +55,7 @@ FX_RATE_CACHE_SECONDS = int(os.getenv("FX_RATE_CACHE_SECONDS", "3600"))
 HOLIDAY_DISCOVERY_SEED_URLS = _split_csv(
     os.getenv(
         "HOLIDAY_DISCOVERY_SEED_URLS",
-        "https://www.kemenkopmk.go.id/,https://setkab.go.id/",
+        "https://www.kemenkopmk.go.id/,https://www.bi.go.id/id/publikasi/Kalender/Documents/Kalender-Libur-BI-2026.pdf",
     )
 )
 HOLIDAY_DISCOVERY_ALLOWED_DOMAIN_SUFFIXES = _split_csv(

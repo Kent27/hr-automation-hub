@@ -55,7 +55,11 @@ Schema:
 }
 
 Rules:
-- Read totals and currency from the visible invoice.
+- Extract ONLY the final payable amount (Grand Total / Total Amount Due / Amount Paid / Total Pembayaran / Total Tagihan).
+- Prefer explicitly-labeled final total fields over subtotal/item rows.
+- Ignore line-item prices, quantity x price lines, discount lines, tax-only lines, and intermediate subtotals.
+- If multiple totals exist, choose the amount that represents the final amount paid/due.
+- If ambiguous, set a lower confidence (<0.7) rather than guessing.
 - Do not invent values.
 - total_amount must be numeric.
 - confidence must be 0.0-1.0.
