@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import re
+import subprocess
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
@@ -14,6 +16,7 @@ from app.config import (
     HOLIDAY_DISCOVERY_MAX_CANDIDATES,
     HOLIDAY_DISCOVERY_MAX_PDF_BYTES,
     HOLIDAY_DISCOVERY_OUTPUT_DIR,
+    HOLIDAY_DISCOVERY_CACHE_FILE,
     HOLIDAY_DISCOVERY_SEED_URLS,
     HOLIDAY_DISCOVERY_TIMEOUT_SECONDS,
 )
@@ -101,6 +104,7 @@ class HolidayPdfDiscoveryService:
         timeout_seconds: int = HOLIDAY_DISCOVERY_TIMEOUT_SECONDS,
         max_pdf_bytes: int = HOLIDAY_DISCOVERY_MAX_PDF_BYTES,
         max_candidates: int = HOLIDAY_DISCOVERY_MAX_CANDIDATES,
+        cache_file: Path = HOLIDAY_DISCOVERY_CACHE_FILE,
         fetcher: Optional[Callable[[str], bytes]] = None,
     ):
         self.seed_urls = [value.strip() for value in seed_urls if value and value.strip()]
@@ -113,6 +117,7 @@ class HolidayPdfDiscoveryService:
         self.timeout_seconds = max(1, timeout_seconds)
         self.max_pdf_bytes = max(1024, max_pdf_bytes)
         self.max_candidates = max(1, max_candidates)
+        self.cache_file = cache_file
         self.fetcher = fetcher
 
     def discover_and_download(
@@ -124,6 +129,18 @@ class HolidayPdfDiscoveryService:
             raise ValueError("Year must be between 2000 and 2100")
 
         candidates = self.discover_candidates(year=year, extra_seed_urls=extra_seed_urls)
+
+        cached_url = self._get_cached_source_url(year)
+        if cached_url:
+            cached_score = self._score_candidate(cached_url, "cached-last-good", year) + 8
+            candidates = [
+                HolidayPdfCandidate(
+                    url=cached_url,
+                    source_page="cache:last-good",
+                    anchor_text="cached last successful source",
+                    score=cached_score,
+                )
+            ] + [c for c in candidates if c.url != cached_url]
         for candidate in candidates[: self.max_candidates]:
             try:
                 pdf_bytes = self._fetch_bytes(candidate.url)
@@ -133,6 +150,7 @@ class HolidayPdfDiscoveryService:
                 continue
 
             pdf_path = self._write_pdf(candidate.url, pdf_bytes, year)
+            self._set_cached_source_url(year, candidate.url, pdf_path)
             return HolidayPdfDiscoveryResult(
                 pdf_path=pdf_path,
                 source_url=candidate.url,
@@ -309,7 +327,9 @@ class HolidayPdfDiscoveryService:
             url,
             headers={
                 "Accept": "text/html,application/pdf,*/*;q=0.8",
-                "User-Agent": "hr-automation-hub/1.0",
+                "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                "Accept-Language": "en-US,en;q=0.9,id;q=0.8",
+                "Referer": "https://www.bi.go.id/",
             },
             method="GET",
         )
@@ -317,14 +337,41 @@ class HolidayPdfDiscoveryService:
         try:
             with request.urlopen(req, timeout=self.timeout_seconds) as response:
                 payload = response.read(self.max_pdf_bytes + 1)
-        except error.HTTPError as exc:
-            detail = exc.read().decode("utf-8", errors="ignore")
-            raise ValueError(f"HTTP {exc.code} while fetching {url}: {detail}")
-        except error.URLError as exc:
-            raise ValueError(f"Failed to fetch {url}: {exc.reason}")
+            if len(payload) > self.max_pdf_bytes:
+                raise ValueError(f"Response too large from {url}")
+            return payload
+        except Exception as urllib_exc:
+            # Browser-like fallback via curl (helps with some WAF/CDN TLS behaviors)
+            try:
+                payload = self._fetch_with_curl(url)
+                if len(payload) > self.max_pdf_bytes:
+                    raise ValueError(f"Response too large from {url}")
+                return payload
+            except Exception:
+                if isinstance(urllib_exc, error.HTTPError):
+                    detail = urllib_exc.read().decode("utf-8", errors="ignore")
+                    raise ValueError(f"HTTP {urllib_exc.code} while fetching {url}: {detail}")
+                if isinstance(urllib_exc, error.URLError):
+                    raise ValueError(f"Failed to fetch {url}: {urllib_exc.reason}")
+                raise ValueError(f"Failed to fetch {url}: {urllib_exc}")
 
-        if len(payload) > self.max_pdf_bytes:
-            raise ValueError(f"Response too large from {url}")
+    def _fetch_with_curl(self, url: str) -> bytes:
+        cmd = [
+            "curl", "-L", "--fail", "--silent", "--show-error",
+            "--max-time", str(self.timeout_seconds),
+            "-A", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            "-H", "Accept: text/html,application/pdf,*/*;q=0.8",
+            "-H", "Accept-Language: en-US,en;q=0.9,id;q=0.8",
+            "-H", "Referer: https://www.bi.go.id/",
+            url,
+        ]
+        proc = subprocess.run(cmd, capture_output=True)
+        if proc.returncode != 0:
+            stderr = (proc.stderr or b"").decode("utf-8", errors="ignore").strip()
+            raise ValueError(stderr or f"curl failed for {url}")
+        payload = proc.stdout
+        if not payload:
+            raise ValueError(f"Empty response from {url}")
         return payload
 
     def _validate_pdf_bytes(self, payload: bytes) -> None:
@@ -351,6 +398,38 @@ class HolidayPdfDiscoveryService:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         output_path.write_bytes(payload)
         return output_path
+
+
+    def _read_cache(self) -> dict:
+        if not self.cache_file.exists():
+            return {}
+        try:
+            data = json.loads(self.cache_file.read_text(encoding="utf-8"))
+            return data if isinstance(data, dict) else {}
+        except Exception:
+            return {}
+
+    def _write_cache(self, payload: dict) -> None:
+        self.cache_file.parent.mkdir(parents=True, exist_ok=True)
+        self.cache_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    def _get_cached_source_url(self, year: int) -> Optional[str]:
+        data = self._read_cache()
+        entry = data.get(str(year)) if isinstance(data, dict) else None
+        if isinstance(entry, dict):
+            url = entry.get("source_url")
+            if isinstance(url, str) and url.strip():
+                return url.strip()
+        return None
+
+    def _set_cached_source_url(self, year: int, source_url: str, pdf_path: Path) -> None:
+        data = self._read_cache()
+        data[str(year)] = {
+            "source_url": source_url,
+            "pdf_path": str(pdf_path),
+            "updated_at": __import__("datetime").datetime.utcnow().isoformat() + "Z",
+        }
+        self._write_cache(data)
 
 
 holiday_pdf_discovery_service = HolidayPdfDiscoveryService()

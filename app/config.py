@@ -73,6 +73,9 @@ HOLIDAY_DISCOVERY_MAX_CANDIDATES = int(
 HOLIDAY_DISCOVERY_OUTPUT_DIR = Path(
     os.getenv("HOLIDAY_DISCOVERY_OUTPUT_DIR", OUTPUT_DIR / "holiday-pdfs")
 )
+HOLIDAY_DISCOVERY_CACHE_FILE = Path(
+    os.getenv("HOLIDAY_DISCOVERY_CACHE_FILE", DATA_DIR / "holiday_discovery_cache.json")
+)
 HOLIDAY_MIN_CONFIDENT_ENTRIES = int(os.getenv("HOLIDAY_MIN_CONFIDENT_ENTRIES", "2"))
 
 COMPANY_NAME = os.getenv("COMPANY_NAME", "PT. Solutionesia Teknologi Digital")
