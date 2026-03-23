@@ -149,6 +149,9 @@ class HolidayPdfDiscoveryService:
     ) -> List[HolidayPdfCandidate]:
         candidates_by_url: dict[str, HolidayPdfCandidate] = {}
 
+        for candidate in self._known_direct_pdf_candidates(year):
+            candidates_by_url[candidate.url] = candidate
+
         for seed_url in self._merge_seed_urls(extra_seed_urls):
             if not self._is_allowed_url(seed_url):
                 logger.warning("Skipping untrusted seed URL: %s", seed_url)
@@ -197,6 +200,30 @@ class HolidayPdfDiscoveryService:
             raise ValueError("No holiday PDF candidates found on trusted domains")
         return candidates
 
+
+
+    def _known_direct_pdf_candidates(self, year: int) -> List[HolidayPdfCandidate]:
+        candidates: List[HolidayPdfCandidate] = []
+
+        bi_urls = [
+            f"https://www.bi.go.id/id/publikasi/Kalender/Documents/Kalender-Libur-BI-{year}.pdf",
+            f"https://www.bi.go.id/id/publikasi/Kalender/Documents/Kalender-Libur-BI_{year}.pdf",
+        ]
+
+        for url in bi_urls:
+            if not self._is_allowed_url(url):
+                continue
+            score = self._score_candidate(url, "Bank Indonesia kalender libur", year) + 5
+            candidates.append(
+                HolidayPdfCandidate(
+                    url=url,
+                    source_page="known-pattern:bi.go.id",
+                    anchor_text="Bank Indonesia calendar direct PDF pattern",
+                    score=score,
+                )
+            )
+
+        return candidates
     def _merge_seed_urls(self, extra_seed_urls: Optional[Iterable[str]]) -> List[str]:
         merged: List[str] = []
         seen: set[str] = set()
