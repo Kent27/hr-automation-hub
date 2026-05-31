@@ -26,6 +26,7 @@ CLAIMS_DIR = DATA_DIR / "claims"
 EMPLOYEES_FILE = DATA_DIR / "employees.json"
 CLAIMS_FILE = DATA_DIR / "claims.json"
 HOLIDAYS_FILE = DATA_DIR / "holidays_id.json"
+CONFIRMED_HOLIDAYS_FILE = DATA_DIR / "holidays_confirmed.json"
 
 OUTPUT_DIR = Path(os.getenv("OUTPUT_DIR", PROJECT_ROOT / "output"))
 PAYSLIP_OUTPUT_DIR = OUTPUT_DIR / "payslips"

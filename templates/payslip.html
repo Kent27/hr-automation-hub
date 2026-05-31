@@ -61,14 +61,6 @@
       font-size: 16px;
       margin-top: 12px;
     }
-    .payment-statement {
-      margin-top: 16px;
-      font-size: 13px;
-    }
-    .payment-label {
-      color: #52606d;
-      margin-bottom: 4px;
-    }
   </style>
 </head>
 <body>
@@ -154,11 +146,6 @@
   <div class="net-pay">
     <div>Net Pay</div>
     <div>{{ payslip.net_pay | currency }}</div>
-  </div>
-
-  <div class="payment-statement">
-    <div class="payment-label">Payment Statement</div>
-    <div>{{ payslip.company_name }}</div>
   </div>
 </body>
 </html>

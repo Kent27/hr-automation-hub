@@ -313,6 +313,78 @@ def list_holidays(
         typer.echo("No holidays found")
 
 
+@holiday_app.command("list-confirmed")
+def list_confirmed_holidays(
+    year: Optional[int] = typer.Argument(None, help="Filter by year"),
+):
+    from app.utils.holidays import load_confirmed_holiday_entries
+
+    all_holidays = load_confirmed_holiday_entries()
+    if year:
+        all_holidays = [h for h in all_holidays if h.holiday_date.year == year]
+    for holiday in all_holidays:
+        typer.echo(
+            f"{holiday.holiday_date.isoformat()}  "
+            f"{holiday.holiday_date.strftime('%A')}  {holiday.name}"
+        )
+    if not all_holidays:
+        typer.echo("No confirmed holidays found")
+
+
+@holiday_app.command("confirm-month")
+def confirm_holidays_for_month(
+    year: int = typer.Option(..., "--year", min=2000, max=2100),
+    month: int = typer.Option(..., "--month", min=1, max=12),
+    include_weekends: bool = typer.Option(
+        False,
+        "--include-weekends",
+        help="Include weekend holidays in the confirmed employee-facing list",
+    ),
+    include_cuti_bersama: bool = typer.Option(
+        False,
+        "--include-cuti-bersama",
+        help="Include cuti bersama in the confirmed employee-facing list",
+    ),
+):
+    from app.utils.holidays import (
+        build_confirmed_holiday_entries,
+        load_confirmed_holiday_entries,
+        load_holiday_entries,
+        save_holiday_entries,
+    )
+    from app.config import CONFIRMED_HOLIDAYS_FILE
+
+    source_entries = load_holiday_entries()
+    confirmed_entries = build_confirmed_holiday_entries(
+        source_entries,
+        year=year,
+        month=month,
+        include_weekends=include_weekends,
+        include_cuti_bersama=include_cuti_bersama,
+    )
+
+    existing_entries = [
+        entry
+        for entry in load_confirmed_holiday_entries()
+        if not (entry.holiday_date.year == year and entry.holiday_date.month == month)
+    ]
+    final_entries = sorted(
+        [*existing_entries, *confirmed_entries],
+        key=lambda item: (item.holiday_date, item.category, item.name),
+    )
+    save_holiday_entries(final_entries, CONFIRMED_HOLIDAYS_FILE)
+
+    payload = [
+        {
+            "date": entry.holiday_date.isoformat(),
+            "name": entry.name,
+            "category": entry.category,
+        }
+        for entry in confirmed_entries
+    ]
+    typer.echo(json.dumps(payload, indent=2, ensure_ascii=False))
+
+
 @auth_app.command("setup-gmail")
 def setup_gmail():
     email_service.setup_oauth()

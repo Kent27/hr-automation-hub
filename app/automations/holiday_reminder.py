@@ -9,7 +9,7 @@ from app.services.employee_service import EmployeeService, employee_service
 from app.utils.holidays import (
     HOLIDAY_CATEGORY_LIBUR_NASIONAL,
     HolidayEntry,
-    load_holiday_entries,
+    load_confirmed_holiday_entries,
 )
 
 
@@ -31,7 +31,7 @@ class HolidayReminderAutomation(Automation):
         self,
         employee_service_instance: EmployeeService = employee_service,
         email_service_instance: Optional[HolidayReminderEmailService] = None,
-        holidays_loader: Callable[[], List[HolidayEntry]] = load_holiday_entries,
+        holidays_loader: Callable[[], List[HolidayEntry]] = load_confirmed_holiday_entries,
     ):
         if email_service_instance is None:
             from app.services.email_service import email_service
@@ -56,6 +56,7 @@ class HolidayReminderAutomation(Automation):
                 if holiday.holiday_date.year == year
                 and holiday.holiday_date.month == month
                 and holiday.category == HOLIDAY_CATEGORY_LIBUR_NASIONAL
+                and holiday.holiday_date.weekday() < 5
             ),
             key=lambda holiday: (holiday.holiday_date, holiday.name),
         )

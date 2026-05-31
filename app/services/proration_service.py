@@ -4,7 +4,7 @@ import calendar
 from datetime import date, timedelta
 from typing import Optional, Set
 
-from app.utils.holidays import load_holidays
+from app.utils.holidays import load_confirmed_holidays
 
 
 def calculate_working_days_in_range(
@@ -25,7 +25,7 @@ def calculate_working_days_in_range(
 
 
 def calculate_working_days(year: int, month: int, holidays: Optional[Set[date]] = None) -> int:
-    holidays = holidays or load_holidays()
+    holidays = holidays if holidays is not None else load_confirmed_holidays()
     last_day = calendar.monthrange(year, month)[1]
     start_date = date(year, month, 1)
     end_date = date(year, month, last_day)
@@ -45,7 +45,7 @@ def calculate_worked_days_for_month(
     join_date: Optional[date] = None,
     holidays: Optional[Set[date]] = None,
 ) -> int:
-    holidays = holidays or load_holidays()
+    holidays = holidays if holidays is not None else load_confirmed_holidays()
     last_day = calendar.monthrange(year, month)[1]
     start_date = date(year, month, 1)
     if join_date and join_date.year == year and join_date.month == month:
